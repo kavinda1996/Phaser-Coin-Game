@@ -21,21 +21,21 @@ const MenuScene = new Phaser.Class({
         this.scene.start('GameScene');
       });
 
-   const continueBtn = this.add.text(700, 400, 'Continue Game', { fontSize: '48px', fill: '#00f' })
-  .setInteractive()
-  .on('pointerdown', () => {
-    this.scene.start('GameScene', { continue: true });
-  });
-
+    const continueBtn = this.add.text(700, 400, 'Continue Game', { fontSize: '48px', fill: '#00f' })
+      .setInteractive()
+      .on('pointerdown', () => {
+        this.scene.start('GameScene', { continue: true });
+      });
   }
 });
 
-
 let score = 0;
 let scoreText;
+let timerText;
 let lastMilestone = 0;
 let startTime;
 let gameEnded = false;
+
 class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameScene' });
@@ -58,6 +58,7 @@ class GameScene extends Phaser.Scene {
       startTime = this.time.now - (60000 - this.remainingTime);
     } else {
       score = 0;
+      this.remainingTime = 60000;
       startTime = this.time.now;
       localStorage.setItem('score', 0);
       localStorage.setItem('timeLeft', 60000);
@@ -77,18 +78,42 @@ class GameScene extends Phaser.Scene {
       fill: '#fff'
     });
 
+    timerText = this.add.text(1400, 16, `Time: ${(this.remainingTime / 1000).toFixed(1)}s`, {
+  fontSize: '32px',
+  fill: '#fff'
+});
+
+
     this.cursors = this.input.keyboard.createCursorKeys();
     this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+
     let bgMusic = this.sound.add('bgMusic', { loop: true });
     bgMusic.play();
-    // Auto-save time every 1 second
+
+    // Auto-save time every 1 second and update timer text
     this.time.addEvent({
-      delay: 1000,
+      delay: 100,
       loop: true,
       callback: () => {
+        if (gameEnded) return;
+
         const elapsed = this.time.now - startTime;
-        const timeLeft = 60000 - elapsed;
-        localStorage.setItem('timeLeft', timeLeft);
+        this.remainingTime = 60000 - elapsed;
+
+        if (this.remainingTime < 0) this.remainingTime = 0;
+
+        const secondsLeft = Math.ceil(this.remainingTime / 1000);
+    timerText.setText(`Time: ${secondsLeft}s`);
+
+        localStorage.setItem('timeLeft', this.remainingTime);
+
+        if (this.remainingTime <= 0 && score < 10 && !gameEnded) {
+          gameEnded = true;
+          this.showNotification("⏰ You are too slow! Try again...", () => {
+            localStorage.clear();
+            this.scene.start('MenuScene');
+          });
+        }
       }
     });
   }
@@ -109,22 +134,12 @@ class GameScene extends Phaser.Scene {
     } else if (this.cursors.down.isDown) {
       this.player.setVelocityY(200);
     }
-
-    const elapsed = this.time.now - startTime;
-
-    if (elapsed >= 60000 && score < 10 && !gameEnded) {
-      gameEnded = true;
-      this.showNotification("⏰ You are too slow! Try again...", () => {
-        localStorage.clear();
-        this.scene.start('MenuScene');
-      });
-    }
   }
 
   collectCoin(player, coin) {
     coin.destroy();
     this.sound.play('coinSound');
-    
+
     score++;
     scoreText.setText('Score: ' + score);
     localStorage.setItem('score', score);
@@ -165,10 +180,6 @@ class GameScene extends Phaser.Scene {
   }
 }
 
-
-
-let player, coin;
-
 const config = {
   type: Phaser.AUTO,
   width: 1600,
@@ -180,26 +191,8 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-// --- Coin Collect Logic ---
-async function collectCoin(playerObj, coinObj) {
-  coinObj.x = Phaser.Math.Between(50, 1550);
-  coinObj.y = Phaser.Math.Between(50, 750);
+// --- AI Fetch & Show Functions ---
 
-  score += 1;
-  scoreText.setText('Score: ' + score);
-
-  localStorage.setItem('score', score);
-
-  this.sound.play('coinSound');
-
-  if (score === 10) {
-    await fetchAIResponse(this, "Say 'Congratulations! You are won!' in a fun way.");
-  } else {
-    await fetchAIResponse(this, "Say 'Well done!' when the player collects a coin.");
-  }
-}
-
-// --- AI Fetch ---
 async function fetchAIResponse(scene, promptText) {
   try {
     const response = await fetch(
@@ -224,7 +217,6 @@ async function fetchAIResponse(scene, promptText) {
   }
 }
 
-// --- Show AI Message ---
 function showAIText(scene, text) {
   const style = {
     font: "32px Arial",
